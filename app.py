@@ -12,13 +12,20 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import google.generativeai as genai
 
+# Замени свои строки на эти:
+TOKEN = "8237149954:AAHTLCBGKzbnR8ATXlrYkK1SIMac6TyA-a8"
+GEMINI_KEY = "AIzaSyDTLdI8T5MvgR4EDhYm49OHyY3c3KO17UE"
+
+# Удали или закомментируй эти строки:
+# TOKEN = os.getenv("BOT_TOKEN")
+# GEMINI_KEY = os.getenv("GEMINI_KEY")
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # === КОНФИГУРАЦИЯ (Railway берет это из переменных окружения) ===
-TOKEN = os.getenv("8237149954:AAHTLCBGKzbnR8ATXlrYkK1SIMac6TyA-a8")
-GEMINI_KEY = os.getenv("AIzaSyDTLdI8T5MvgR4EDhYm49OHyY3c3KO17UE")
+#TOKEN = os.getenv("8237149954:AAHTLCBGKzbnR8ATXlrYkK1SIMac6TyA-a8")
+#GEMINI_KEY = os.getenv("AIzaSyDTLdI8T5MvgR4EDhYm49OHyY3c3KO17UE")
 
 if not TOKEN or not GEMINI_KEY:
     logger.error("КРИТИЧЕСКАЯ ОШИБКА: Токены не найдены в переменных окружения!")
