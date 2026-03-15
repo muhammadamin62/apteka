@@ -26,10 +26,15 @@ GEMINI_KEY = "AIzaSyDTLdI8T5MvgR4EDhYm49OHyY3c3KO17UE"
 genai.configure(api_key=GEMINI_KEY)
 ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
-# Инициализация бота
+# ... (твои импорты и токены) ...
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+# ВОТ ЭТА СТРОКА ДОЛЖНА БЫТЬ ТУТ:
+scheduler = AsyncIOScheduler(timezone="Asia/Tashkent") 
+
+# ... (дальше идет остальной код: init_db, функции и т.д.) ...
 # === БАЗА ДАННЫХ ===
 def get_db():
     return sqlite3.connect("med_bot.db")
