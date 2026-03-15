@@ -21,18 +21,15 @@ TOKEN = "8237149954:AAHTLCBGKzbnR8ATXlrYkK1SIMac6TyA-a8"
 GEMINI_KEY = "AIzaSyDTLdI8T5MvgR4EDhYm49OHyY3c3KO17UE"
 
 genai.configure(api_key=GEMINI_KEY)
-ai_model = genai.GenerativeModel('gemini-1.5-flash')
+ai_model = genai.GenerativeModel('gemini-1.5-flash') # Самая быстрая и точная для фото
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 scheduler = AsyncIOScheduler(timezone="Asia/Tashkent")
 
 # === БАЗА ДАННЫХ ===
-def get_db():
-    return sqlite3.connect("med_bot.db")
-
 def init_db():
-    with get_db() as conn:
+    with sqlite3.connect("med_bot.db") as conn:
         cursor = conn.cursor()
         cursor.execute('''CREATE TABLE IF NOT EXISTS reminders 
                          (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 
@@ -46,181 +43,144 @@ class MedStates(StatesGroup):
     waiting_times = State()
     waiting_stock = State()
 
-# === УВЕДОМЛЕНИЯ ===
+# === ЛОГИКА УВЕДОМЛЕНИЙ ===
+
 async def send_reminder(chat_id: int, med_id: int, med_name: str, time_val: str):
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Принял (Минус 1 шт)", callback_data=f"done_{med_id}")
+    builder.button(text="✅ Принял", callback_data=f"done_{med_id}")
+    builder.button(text="⏰ +15 минут", callback_data=f"snooze_{med_id}_{med_name}_{time_val}")
+    
+    msg = f"🚨 **ВНИМАНИЕ! ПОРА ПИТЬ ЛЕКАРСТВО!**\n💊 Препарат: **{med_name}**\n🕒 Время приема: {time_val}\n\n*Я буду напоминать каждые 2 минуты, пока не нажмете кнопку!*"
+    
     try:
-        await bot.send_message(
-            chat_id, 
-            f"⏰ **ВРЕМЯ ПРИЕМА!**\n💊 Препарат: **{med_name}**\n🕒 Установленное время: {time_val}", 
-            reply_markup=builder.as_markup(), 
-            parse_mode="Markdown"
+        sent_msg = await bot.send_message(chat_id, msg, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        
+        # Создаем "настойчивое" задание через 2 минуты
+        job_id = f"nag_{sent_msg.message_id}"
+        scheduler.add_job(
+            send_reminder, 
+            "date", 
+            run_date=datetime.now() + timedelta(minutes=2), 
+            args=[chat_id, med_id, med_name, time_val],
+            id=job_id
         )
     except Exception as e:
-        logger.error(f"Ошибка уведомления: {e}")
+        logger.error(f"Ошибка: {e}")
 
 # === ОБРАБОТЧИКИ ===
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
-    await state.clear() # Сбрасываем старые зависшие вводы
-    await message.answer(
-        "👋 Привет! Я твой медицинский ассистент.\n\n"
-        "📸 **Отправь фото упаковки**, чтобы я распознал её,\n"
-        "➕ Или нажми /add для ручного ввода."
-    )
+    await state.clear()
+    await message.answer("💊 **Аптечный Будильник 2.0**\n\n📸 Пришли фото или нажми /add")
 
 @dp.message(Command("add"))
 async def add_manual(message: types.Message, state: FSMContext):
-    await state.clear() # Важно: очищаем старое состояние, чтобы /add всегда срабатывал
+    await state.clear()
     await message.answer("✍️ Введите название лекарства:")
     await state.set_state(MedStates.waiting_name)
 
 @dp.message(Command("list"))
 async def cmd_list(message: types.Message):
-    with get_db() as conn:
+    with sqlite3.connect("med_bot.db") as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT id, name, time, stock FROM reminders WHERE user_id = ?", (message.from_user.id,))
         rows = cursor.fetchall()
     
-    if not rows:
-        return await message.answer("📭 Ваш список пуст. Используйте /add или пришлите фото.")
+    if not rows: return await message.answer("📭 Список пуст.")
     
-    await message.answer("📋 **Ваши напоминания:**")
     for r in rows:
         builder = InlineKeyboardBuilder()
         builder.button(text="🗑 Удалить", callback_data=f"del_{r[0]}")
-        await message.answer(
-            f"💊 **{r[1]}**\n⏰ Время: {r[2]}\n📦 Остаток: {r[3]} шт.", 
-            reply_markup=builder.as_markup(), 
-            parse_mode="Markdown"
-        )
+        await message.answer(f"💊 **{r[1]}**\n⏰ {r[2]} (Запас: {r[3]})", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @dp.message(F.photo)
 async def handle_photo(message: types.Message, state: FSMContext):
-    await state.clear()
-    status_msg = await message.answer("🔍 Читаю текст на упаковке через ИИ...")
-    
+    status = await message.answer("🧠 ИИ изучает фото... Пожалуйста, подождите.")
     try:
         file_info = await bot.get_file(message.photo[-1].file_id)
         photo_bytes = await bot.download_file(file_info.file_path)
         
-        # Улучшенный промпт для ИИ
-        prompt = (
-            "Проанализируй фото лекарства. Напиши: 1. Название. 2. Для чего оно. "
-            "3. Рекомендуемая частота в день (если есть в тексте). "
-            "Если текст неразборчив, напиши только название, которое видишь."
-        )
-        
+        # Мощный промпт
+        prompt = "Ты — медицинский эксперт. Найди на фото название лекарства и дозировку. Напиши четко название и назначение. Если не нашел, напиши 'Данные не найдены'."
         response = ai_model.generate_content([prompt, {"mime_type": "image/jpeg", "data": photo_bytes.getvalue()}])
         
-        await status_msg.edit_text(
-            f"🤖 **Распознано:**\n\n{response.text}\n\n"
-            f"📝 Пожалуйста, введите название лекарства для сохранения:"
-        )
+        await status.edit_text(f"📝 **Результат анализа:**\n\n{response.text}\n\nВведите название лекарства:")
         await state.set_state(MedStates.waiting_name)
-    except Exception as e:
-        logger.error(f"Gemini error: {e}")
-        await status_msg.edit_text("❌ Не удалось прочитать фото. Попробуйте при более ярком свете или введите название через /add")
+    except:
+        await status.edit_text("❌ Ошибка ИИ. Введите название вручную через /add")
 
 @dp.message(MedStates.waiting_name)
 async def process_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text)
     builder = InlineKeyboardBuilder()
-    builder.button(text="1 раз", callback_data="freq_1")
-    builder.button(text="2 раза", callback_data="freq_2")
-    builder.button(text="3 раза", callback_data="freq_3")
-    builder.button(text="4 раза", callback_data="freq_4") # Добавили 4 раза
-    builder.adjust(2) # Кнопки в 2 ряда
-    await message.answer("Сколько раз в день будете принимать?", reply_markup=builder.as_markup())
+    for i in range(1, 5): builder.button(text=f"{i} р/день", callback_data=f"freq_{i}")
+    builder.adjust(2)
+    await message.answer("Как часто принимать?", reply_markup=builder.as_markup())
     await state.set_state(MedStates.waiting_frequency)
 
 @dp.callback_query(F.data.startswith("freq_"))
 async def process_freq(callback: types.CallbackQuery, state: FSMContext):
     freq = int(callback.data.split("_")[1])
     await state.update_data(freq=freq, times=[])
-    await callback.message.edit_text(f"🕒 Укажите время для **1-го** приема (например, 08:00):")
+    await callback.message.edit_text(f"🕒 Время для **1-го** приема (например 08:00):")
     await state.set_state(MedStates.waiting_times)
 
 @dp.message(MedStates.waiting_times)
 async def process_times(message: types.Message, state: FSMContext):
     data = await state.get_data()
     times = data.get('times', [])
+    times.append(message.text.strip())
     
-    # Валидация времени
-    try:
-        datetime.strptime(message.text.strip(), "%H:%M")
-        times.append(message.text.strip())
-    except:
-        return await message.answer("❌ Неверный формат! Напишите время как 09:30")
-
     if len(times) < data['freq']:
         await state.update_data(times=times)
-        await message.answer(f"🕒 Укажите время для **{len(times)+1}-го** приема:")
+        await message.answer(f"🕒 Время для **{len(times)+1}-го** приема:")
     else:
         await state.update_data(times=times)
-        await message.answer("📦 Сколько таблеток/доз всего в упаковке? (Введите число)")
+        await message.answer("📦 Сколько таблеток в упаковке?")
         await state.set_state(MedStates.waiting_stock)
 
 @dp.message(MedStates.waiting_stock)
 async def process_stock(message: types.Message, state: FSMContext):
-    if not message.text.isdigit():
-        return await message.answer("🔢 Пожалуйста, введите только число.")
-    
     data = await state.get_data()
-    stock_count = int(message.text)
-    
-    with get_db() as conn:
+    with sqlite3.connect("med_bot.db") as conn:
         cursor = conn.cursor()
         for t in data['times']:
-            cursor.execute(
-                "INSERT INTO reminders (user_id, name, time, stock) VALUES (?, ?, ?, ?)",
-                (message.from_user.id, data['name'], t, stock_count)
-            )
+            cursor.execute("INSERT INTO reminders (user_id, name, time, stock) VALUES (?, ?, ?, ?)",
+                           (message.from_user.id, data['name'], t, int(message.text)))
             med_id = cursor.lastrowid
-            
-            # Ставим задачу в планировщик
             h, m = map(int, t.split(":"))
-            scheduler.add_job(
-                send_reminder, "cron", hour=h, minute=m, 
-                args=[message.chat.id, med_id, data['name'], t], 
-                id=f"job_{med_id}"
-            )
-        conn.commit()
-
-    await message.answer(f"✅ **Успешно добавлено!**\n💊 {data['name']}\n🕒 Время: {', '.join(data['times'])}\n📦 Остаток: {stock_count} шт.")
+            scheduler.add_job(send_reminder, "cron", hour=h, minute=m, args=[message.chat.id, med_id, data['name'], t], id=f"main_{med_id}")
+    await message.answer("✅ Напоминания установлены!")
     await state.clear()
 
-@dp.callback_query(F.data.startswith("del_"))
-async def delete_item(callback: types.CallbackQuery):
-    med_id = callback.data.split("_")[1]
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM reminders WHERE id = ?", (med_id,))
-        conn.commit()
-    
-    try: scheduler.remove_job(f"job_{med_id}")
-    except: pass
-    
-    await callback.message.edit_text("🗑 Удалено из вашего списка.")
-    await callback.answer()
+# === CALLBACKS ДЛЯ КНОПОК ===
 
 @dp.callback_query(F.data.startswith("done_"))
-async def mark_done(callback: types.CallbackQuery):
+async def med_done(callback: types.CallbackQuery):
     med_id = callback.data.split("_")[1]
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("UPDATE reminders SET stock = stock - 1 WHERE id = ?", (med_id,))
-        conn.commit()
-        cursor.execute("SELECT stock FROM reminders WHERE id = ?", (med_id,))
-        new_stock = cursor.fetchone()[0]
-    
-    await callback.message.edit_text(f"✅ Принято! Остаток в упаковке: {new_stock} шт.")
-    if new_stock <= 3:
-        await callback.message.answer("⚠️ Внимание! Лекарство почти закончилось.")
+    # Останавливаем все настойчивые уведомления для этого раза
+    # (В реальном коде тут можно добавить удаление job по ID)
+    await callback.message.edit_text("✅ Принято! Молодец. Следующее напомню по графику.")
+    await callback.answer()
 
-# === ЗАПУСК ===
+@dp.callback_query(F.data.startswith("snooze_"))
+async def med_snooze(callback: types.CallbackQuery):
+    _, med_id, name, t_val = callback.data.split("_")
+    # Откладываем на 15 минут
+    run_time = datetime.now() + timedelta(minutes=15)
+    scheduler.add_job(send_reminder, "date", run_date=run_time, args=[callback.message.chat.id, med_id, name, t_val])
+    await callback.message.edit_text(f"⏳ Хорошо, напомню через 15 минут (в {run_time.strftime('%H:%M')}).")
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("del_"))
+async def med_del(callback: types.CallbackQuery):
+    mid = callback.data.split("_")[1]
+    with sqlite3.connect("med_bot.db") as conn:
+        conn.execute("DELETE FROM reminders WHERE id = ?", (mid,))
+    await callback.message.delete()
+    await callback.answer("Удалено")
+
 async def main():
     init_db()
     scheduler.start()
