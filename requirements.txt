@@ -1,6 +1,6 @@
 aiogram==3.10.0
 apscheduler==3.10.4
-google-generativeai==0.7.2
+google-generativeai>=0.8.3
 gunicorn==23.0.0
 flask==3.0.3  # Если у тебя веб-интерфейс на Flask
 # или fastapi, если используешь его
