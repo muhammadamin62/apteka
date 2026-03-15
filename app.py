@@ -17,17 +17,18 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # === КОНФИГУРАЦИЯ ===
-# На Railway лучше использовать переменные окружения. 
-# Если не работает, вставь токены напрямую в кавычки.
-TOKEN = os.getenv("8237149954:AAHTLCBGKzbnR8ATXlrYkK1SIMac6TyA-a8")
-GEMINI_KEY = os.getenv("AIzaSyDTLdI8T5MvgR4EDhYm49OHyY3c3KO17UE")
+# === КОНФИГУРАЦИЯ ===
+# Вставляем токены напрямую, чтобы Railway не капризничал
+TOKEN = "8237149954:AAHTLCBGKzbnR8ATXlrYkK1SIMac6TyA-a8"
+GEMINI_KEY = "AIzaSyDTLdI8T5MvgR4EDhYm49OHyY3c3KO17UE"
 
+# Настройка ИИ
 genai.configure(api_key=GEMINI_KEY)
 ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
+# Инициализация бота
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-scheduler = AsyncIOScheduler(timezone="Asia/Tashkent")
 
 # === БАЗА ДАННЫХ ===
 def get_db():
