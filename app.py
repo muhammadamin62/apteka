@@ -43,8 +43,8 @@ class MedStates(StatesGroup):
 # === ASOSIY TUGMALAR ===
 def main_menu():
     builder = ReplyKeyboardBuilder()
-    builder.button(text="➕ Dori qo‘shish")
-    builder.button(text="📋 Mening dorilarim")
+    builder.button(text="➕ NASHACHALARNI qo‘shish")
+    builder.button(text="📋 Mening NASHACHALARIM")
     builder.adjust(1)
     return builder.as_markup(resize_keyboard=True)
 
@@ -74,7 +74,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(
         f"🌿 **Xush kelibsiz, {message.from_user.first_name}!**\n\n"
-        "Men sizga nashachani yoki oxey dorichalarni o‘z vaqtida ichishingizni eslatib turaman. "
+        "Men sizga NASHACHANI yoki OXEY dorichalarni o‘z vaqtida ichishingizni eslatib turaman. "
         "Osmonga uchish uchun pastdagi tugmalardan birini tanlang.",
         reply_markup=main_menu(),
         parse_mode="Markdown"
