@@ -38,8 +38,8 @@ class MedStates(StatesGroup):
 # === ГЛАВНОЕ МЕНЮ ===
 def main_menu():
     builder = ReplyKeyboardBuilder()
-    builder.button(text="➕ NASHACHALARNI qo‘shish")
-    builder.button(text="📋 Mening NASHACHALARIM")
+    builder.button(text="➕ dori qo‘shish")
+    builder.button(text="📋 Mening dorilarim")
     builder.adjust(1)
     return builder.as_markup(resize_keyboard=True)
 
@@ -54,7 +54,7 @@ async def send_reminder(chat_id: int, med_id: int, med_name: str, time_val: str)
     builder.button(text="⏰ +15 daqiqa", callback_data=f"snooze_{med_id}_{med_name}_{time_val}")
     builder.adjust(2)
     
-    msg = f"✨ **VAQT KELDI** ✨\n\n💊 Nashacha nomi: **{med_name}**\n🕒 Rejadagi vaqt: {time_val}\n\n*Osmonga uchishga tayyormisiz?*"
+    msg = f"✨ **VAQT KELDI** ✨\n\n💊 Dori nomi: **{med_name}**\n🕒 Rejadagi vaqt: {time_val}\n\n*Qabul qilishga tayyormisiz?*"
     
     try:
         await bot.send_message(chat_id, msg, reply_markup=builder.as_markup(), parse_mode="Markdown")
@@ -71,27 +71,27 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(
         f"🌿 **Xush kelibsiz, {message.from_user.first_name}!**\n\n"
-        "Men sizga NASHACHANI yoki OXEY dorichalarni o‘z vaqtida ichishingizni eslatib turaman. "
-        "Osmonga uchish uchun pastdagi tugmalardan birini tanlang.",
+        "Men sizga dorilarni o‘z vaqtida ichishingizni eslatib turaman. "
+        "Qabulni boshlash uchun uchun pastdagi tugmalardan birini tanlang.",
         reply_markup=main_menu(),
         parse_mode="Markdown"
     )
 
-@dp.message(F.text == "➕ NASHACHALARNI qo‘shish")
+@dp.message(F.text == "➕ Dori  qo‘shish")
 async def add_btn(message: types.Message, state: FSMContext):
     await state.clear()
-    await message.answer("🧪 **Nashachani nomini yozing:**", parse_mode="Markdown")
+    await message.answer("🧪 **Dori nomini yozing:**", parse_mode="Markdown")
     await state.set_state(MedStates.waiting_name)
 
-@dp.message(F.text == "📋 Mening NASHACHALARIM")
+@dp.message(F.text == "📋 Mening dorilarim")
 async def list_btn(message: types.Message):
     with sqlite3.connect("med_bot.db") as conn:
         rows = conn.execute("SELECT id, name, time, stock FROM reminders WHERE user_id = ?", (message.from_user.id,)).fetchall()
     
     if not rows:
-        return await message.answer("📭 Nashachalaringiz ro‘yxati bo‘sh. «NASHA qo‘shish» tugmasini bosing.")
+        return await message.answer("📭 Dorilar ro‘yxati bo‘sh. «Dori qo‘shish» tugmasini bosing.")
     
-    await message.answer("📋 **Sizning parvozingiz jadvali:**", parse_mode="Markdown")
+    await message.answer("📋 **Sizning dorilar jadvali:**", parse_mode="Markdown")
     for r in rows:
         kb = InlineKeyboardBuilder()
         kb.button(text="🗑 O‘chirish", callback_data=f"del_{r[0]}")
@@ -105,14 +105,14 @@ async def process_name(message: types.Message, state: FSMContext):
     builder = InlineKeyboardBuilder()
     for i in range(1, 5): builder.button(text=f"{i} mahal", callback_data=f"f_{i}")
     builder.adjust(2)
-    await message.answer(f"🔢 **{message.text}** Nashachani kuniga necha mahal urasiz?", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await message.answer(f"🔢 **{message.text}** Dorini kuniga necha mahal urasiz?", reply_markup=builder.as_markup(), parse_mode="Markdown")
     await state.set_state(MedStates.waiting_frequency)
 
 @dp.callback_query(F.data.startswith("f_"))
 async def process_freq(callback: types.CallbackQuery, state: FSMContext):
     freq = int(callback.data.split("_")[1])
     await state.update_data(freq=freq, times=[])
-    await callback.message.edit_text(f"🕒 **1-parvoz vaqtini** kiriting (masalan, 16:20):", parse_mode="Markdown")
+    await callback.message.edit_text(f"🕒 **1-qabul vaqtini** kiriting (masalan, 16:20):", parse_mode="Markdown")
     await state.set_state(MedStates.waiting_times)
 
 @dp.message(MedStates.waiting_times)
@@ -126,7 +126,7 @@ async def process_times(message: types.Message, state: FSMContext):
         await message.answer(f"🕒 **{len(times)+1}-parvoz vaqtini** kiriting:", parse_mode="Markdown")
     else:
         await state.update_data(times=times)
-        await message.answer("📦 Qutida nechta nashacha bor? (sonini yozing)", parse_mode="Markdown")
+        await message.answer("📦 Qutida nechta dori bor? (sonini yozing)", parse_mode="Markdown")
         await state.set_state(MedStates.waiting_stock)
 
 @dp.message(MedStates.waiting_stock)
